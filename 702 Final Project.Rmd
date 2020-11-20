@@ -1,0 +1,630 @@
+---
+title: "Final Project"
+author: "Malcolm Smith Fraser"
+date: "10/30/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(pander)
+library(tidyverse)
+library(gridExtra)
+library(caret)
+library(e1071)
+library(arm)
+library(pROC)
+```
+
+There do appear to be some missing values (4 in 'ca', and 2 in 'thal')
+Dropping all rows with na values drops 6 rows (303 -> 297)
+```{r cars}
+cleveland <- read.csv('cleaned_cleveland.csv',header = TRUE)
+cleveland$sex <- factor(cleveland$sex, 
+                       levels = c(0,1), 
+                       labels = c('female','male')
+                       )
+cleveland$cp =  factor(cleveland$cp, 
+                       levels = c(1,2,3,4), 
+                       labels = c('typical angina',
+                                  'atypical angina',
+                                  'non-anginal pain',
+                                  'asymptomatic')
+                       )
+cleveland$exang <- factor(cleveland$exang, 
+                         levels = c(0,1), 
+                         labels = c('no','yes')
+                         )
+cleveland$slope <- factor(cleveland$slope, 
+                         levels = c(1,2,3), 
+                         labels = c('unsloping','flat','downsloping')
+                         )
+cleveland$ca <- as.factor(cleveland$ca)
+cleveland$thal <- factor(cleveland$thal, 
+                        levels = c(3,6,7), 
+                        labels = c("normal","fixed defect", "reversable defect")
+                        )
+cleveland$numm <- as.factor(cleveland$num)
+cleveland$num <- factor(cleveland$num, 
+                       levels = c(0,1), 
+                       labels = c("NoDiagnosis","Diagnosis")
+                       )
+cleveland$fbs <- factor(cleveland$fbs, 
+                       levels = c(0,1), 
+                       labels = c("Under 120mg/dl","Over 120mg/dl")
+                       )
+cleveland$restecg <- factor(cleveland$restecg, 
+                           levels = c(0,1,2), 
+                           labels = c("Normal","ST-T wave abnormality","LV Hypertophy")
+                           )
+cleveland$trestbps <- cleveland$trestbps - mean(cleveland$trestbps)
+cleveland$age <- cleveland$age - mean(cleveland$age)
+cleveland$chol <- cleveland$chol - mean(cleveland$chol)
+cleveland$thalach <- cleveland$thalach - mean(cleveland$thalach)
+cleveland$oldpeak <- cleveland$oldpeak - mean(cleveland$oldpeak)
+
+cleveland = drop_na(cleveland)
+
+summary(cleveland)
+str(cleveland)
+nrow(cleveland)
+```
+```{r, echo=F}
+plot(cleveland$num)
+```
+
+# Factor variables and interactions
+Looks like if you have exercised induced angina the probability that you have heart disease is significantly higher
+Also looks like the probability that you have heart disease is significantly higher if you are asymptimatic in terms of chest pain 
+```{r, echo = F}
+pander(tapply(cleveland$num, cleveland$cp, function(x) table(x)/sum(table(x))))
+pander(tapply(cleveland$num, cleveland$exang, function(x) table(x)/sum(table(x))))
+
+```
+
+For every level of chest pain (including asymptomatic) except for typical angina, the probability of having heart disease is greater for patients who are experiencing exercise induced angina. This could be dut to the fact that if you are experiencing typical angina, the probability that you are also experiencing angina during exercise is likely higher regardless of if you have heart disease.
+
+```{r, echo = F}
+pander(tapply(cleveland$num[cleveland$exang == 'no'], cleveland$cp[cleveland$exang == 'no'], function(x) table(x)/sum(table(x))))
+pander(tapply(cleveland$num[cleveland$exang == 'yes'], cleveland$cp[cleveland$exang == 'yes'], function(x) table(x)/sum(table(x))))
+
+```
+
+Asymptomatic women a are more likely to have a diagnosis 
+```{r, echo = F}
+pander(tapply(cleveland$num[cleveland$sex == 'male'], cleveland$cp[cleveland$sex == 'male'], function(x) table(x)/sum(table(x))))
+pander(tapply(cleveland$num[cleveland$sex == 'female'], cleveland$cp[cleveland$sex == 'female'], function(x) table(x)/sum(table(x))))
+```
+
+```{r, echo = F}
+tapply(cleveland$num[cleveland$fbs == 'Under 120mg/dl'], cleveland$cp[cleveland$fbs == 'Under 120mg/dl'], function(x) table(x)/sum(table(x)))
+tapply(cleveland$num[cleveland$fbs == 'Over 120mg/dl'], cleveland$cp[cleveland$fbs == 'Over 120mg/dl'], function(x) table(x)/sum(table(x)))
+```
+
+```{r, echo = F}
+pander(tapply(cleveland$num[cleveland$restecg  == 'Normal'], cleveland$cp[cleveland$restecg  == 'Normal'], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$restecg  == 'Normal'])
+pander(tapply(cleveland$num[cleveland$restecg  == 'ST-T wave abnormality'], cleveland$cp[cleveland$restecg  == 'ST-T wave abnormality'], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$restecg  == 'ST-T wave abnormality'])
+pander(tapply(cleveland$num[cleveland$restecg  == "LV Hypertophy"], cleveland$cp[cleveland$restecg  == "LV Hypertophy"], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$restecg  == "LV Hypertophy"])
+```
+
+Some values are 0 or 1 thus we cant includein the model (will throw error)
+```{r, echo = F}
+tapply(cleveland$num[cleveland$slope == 'unsloping'], cleveland$cp[cleveland$slope == 'unsloping'], function(x) table(x)/sum(table(x)))
+table(cleveland$cp[cleveland$slope == 'unsloping'])
+tapply(cleveland$num[cleveland$slope == 'flat'], cleveland$cp[cleveland$slope == 'flat'], function(x) table(x)/sum(table(x)))
+table(cleveland$cp[cleveland$slope == 'flat'])
+tapply(cleveland$num[cleveland$slope == 'downsloping'], cleveland$cp[cleveland$slope == 'downsloping'], function(x) table(x)/sum(table(x)))
+table(cleveland$cp[cleveland$slope == 'downsloping'])
+```
+
+Potential interaction between cp and thal but insufficeint obersations at each level to consider interactions
+```{r, echo = F}
+pander(tapply(cleveland$num[cleveland$thal == 'normal'], cleveland$cp[cleveland$thal == 'normal'], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$thal == 'normal'])
+pander(tapply(cleveland$num[cleveland$thal == 'fixed defect'], cleveland$cp[cleveland$thal == 'fixed defect'], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$thal == 'fixed defect'])
+pander(tapply(cleveland$num[cleveland$thal == 'reversable defect'], cleveland$cp[cleveland$thal == 'reversable defect'], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$thal == 'reversable defect'])
+```
+may be interaction between cp and ca
+```{r, echo = F}
+pander(tapply(cleveland$num[cleveland$ca == 0], cleveland$cp[cleveland$ca == 0], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$ca == 0])
+pander(tapply(cleveland$num[cleveland$ca == 1], cleveland$cp[cleveland$ca == 1], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$ca == 1])
+pander(tapply(cleveland$num[cleveland$ca == 2], cleveland$cp[cleveland$ca == 2], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$ca == 2])
+pander(tapply(cleveland$num[cleveland$ca == 3], cleveland$cp[cleveland$ca == 3], function(x) table(x)/sum(table(x))))
+table(cleveland$cp[cleveland$ca == 3])
+table(cleveland$ca)
+```
+
+# Continuous variables and interactions
+
+The repationship between age and heart disease is generally unchaged given different types of angina, with diseased patients being older than non-patients. However, diseased patients experiencing typical angina do appear to be roughly the same age an non diseased patients with the same angina classification
+
+Potantial interaction between thal and age
+slight interaction betweem thal and trestbps
+```{r age EDA, echo=FALSE}
+##### AGE #####
+p1 = ggplot(cleveland, aes(x=age, y=num, fill=num)) +
+              geom_boxplot();p1
+
+### Interactions with chest pain
+p6 = ggplot(cleveland, aes(x=age, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p6
+p7 = ggplot(cleveland, aes(x=age, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~exang);p7
+p7a = ggplot(cleveland, aes(x=age, y=num, fill=exang)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p7a
+
+### Interactions with other factor variables
+
+p8a = ggplot(cleveland, aes(x=age, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~sex);p8a
+p8b = ggplot(cleveland, aes(x=age, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~fbs);p8b
+p8c = ggplot(cleveland, aes(x=age, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~restecg);p8c
+p8d = ggplot(cleveland, aes(x=age, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~slope);p8d
+p8e = ggplot(cleveland, aes(x=age, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~thal);p8e ###
+p8f = ggplot(cleveland, aes(x=age, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~ca);p8f
+
+table(cleveland$age[cleveland$ca == 3])
+```
+
+No apparent interactions between trestbps and either type of chest pain
+Potential interaction beteeen sex and trestbps (and maybe trestbps and fbs)
+slight interaction between trestbps and ca
+```{r trestbps EDA, echo=F}
+##### TRESTBPS #####
+p2 = ggplot(cleveland, aes(x=trestbps, y=num, fill=num)) +
+              geom_boxplot();p2
+
+### Interactions with chest pain
+p8 = ggplot(cleveland, aes(x=trestbps, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p8
+p9 = ggplot(cleveland, aes(x=trestbps, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~exang);p9
+p9a = ggplot(cleveland, aes(x=trestbps, y=num, fill=exang)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p9a
+
+### Interactions with other factor variables
+p10a = ggplot(cleveland, aes(x=trestbps, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~sex);p10a ###
+p10b = ggplot(cleveland, aes(x=trestbps, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~fbs);p10b
+p10c = ggplot(cleveland, aes(x=trestbps, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~restecg);p10c
+p10d = ggplot(cleveland, aes(x=trestbps, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~slope);p10d
+p10e = ggplot(cleveland, aes(x=trestbps, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~thal);p10e
+p10f = ggplot(cleveland, aes(x=trestbps, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~ca);p10f
+table(cleveland$num[cleveland$ca == 3])
+```
+
+(MAYBE) slight interaction between chol and cp
+No other apparent interactions with chol
+Slight interaction between chol and ca
+```{r chol EDA, echo=F}
+##### CHOL #####
+p3 = ggplot(cleveland, aes(x=chol, y=num, fill=num)) +
+              geom_boxplot();p3
+
+### Interactions with chest pain
+p10 = ggplot(cleveland, aes(x=chol, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p10
+p11 = ggplot(cleveland, aes(x=chol, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~exang);p11
+p11a = ggplot(cleveland, aes(x=chol, y=num, fill=exang)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p11a
+
+### Interactions with other factor variables
+p12a = ggplot(cleveland, aes(x=chol, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~sex);p12a ###
+p12b = ggplot(cleveland, aes(x=chol, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~fbs);p12b
+p12c = ggplot(cleveland, aes(x=chol, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~restecg);p12c
+p12d = ggplot(cleveland, aes(x=chol, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~slope);p12d
+p12e = ggplot(cleveland, aes(x=chol, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~thal);p12e
+p12f = ggplot(cleveland, aes(x=chol, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~ca);p12f
+table(cleveland$cp)
+```
+
+No apparent interactions with thalach
+```{r thalach EDA, echo=F}
+##### THALACH #####
+p4 = ggplot(cleveland, aes(x=thalach, y=num, fill=num)) +
+              geom_boxplot();p4
+
+### Interactions with chest pain
+p12 = ggplot(cleveland, aes(x=thalach, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p12
+p13 = ggplot(cleveland, aes(x=thalach, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~exang);p13
+p13a = ggplot(cleveland, aes(x=thalach, y=num, fill=exang)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p13a
+
+### Interactions with other factor variables
+p14a = ggplot(cleveland, aes(x=thalach, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~sex);p14a
+p14b = ggplot(cleveland, aes(x=thalach, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~fbs);p14b
+p14c = ggplot(cleveland, aes(x=thalach, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~restecg);p14c
+p14d = ggplot(cleveland, aes(x=thalach, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~slope);p14d
+p14e = ggplot(cleveland, aes(x=thalach, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~thal);p14e
+p14f = ggplot(cleveland, aes(x=thalach, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~ca);p14f
+```
+
+(MAYBE) slight interaction between oldpeak and cp
+```{r oldpeak EDA, echo=F}
+##### OLDPEAK #####
+p5 = ggplot(cleveland, aes(x=oldpeak, y=num, fill=num)) +
+              geom_boxplot();p5
+
+### Interactions with chest pain
+p14 = ggplot(cleveland, aes(x=oldpeak, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p14
+p15 = ggplot(cleveland, aes(x=oldpeak, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~exang);p15
+p15a = ggplot(cleveland, aes(x=oldpeak, y=num, fill=exang)) +
+              geom_boxplot() +
+              facet_wrap(~cp);p15a
+
+### Interactions with other factor variables
+p15a = ggplot(cleveland, aes(x=oldpeak, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~sex);p15a ###
+p15b = ggplot(cleveland, aes(x=oldpeak, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~fbs);p15b
+p15c = ggplot(cleveland, aes(x=oldpeak, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~restecg);p15c
+p15d = ggplot(cleveland, aes(x=oldpeak, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~slope);p15d
+p15e = ggplot(cleveland, aes(x=oldpeak, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~thal);p15e
+p15f = ggplot(cleveland, aes(x=oldpeak, y=num, fill=num)) +
+              geom_boxplot() +
+              facet_wrap(~ca);p15f
+```
+
+
+# Modelling
+
+When looking at chest pain alone, does
+```{r, echo=F}
+#Selecting the null model
+
+model_bare <- glm(num ~ 1, data = cleveland, family = binomial)
+summary(model_bare)
+rawresid_bare <- residuals(model_bare,"resp")
+binnedplot(x=fitted(model_bare),y=rawresid1,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_bare <- confusionMatrix(as.factor(ifelse(fitted(model_bare) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_bare
+
+
+model_cp <- glm(num ~ relevel(cp,ref='asymptomatic'), data = cleveland, family = 'binomial')
+summary(model_cp)
+rawresid_cp <- residuals(model_cp,"resp")
+binnedplot(x=fitted(model_cp),y=rawresid_cp,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_cp <- confusionMatrix(as.factor(ifelse(fitted(model_cp) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_cp
+
+model_exang <- glm(num ~ exang, data = cleveland, family = 'binomial')
+summary(model_exang)
+rawresid_exang <- residuals(model_exang,"resp")
+binnedplot(x=fitted(model_exang),y=rawresid_cp,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_exang <- confusionMatrix(as.factor(ifelse(fitted(model_exang) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_exang
+
+### Best Null model below
+model_cpex <- glm(num ~ cp*exang, data = cleveland, family = 'binomial')
+summary(model_cpex)
+rawresid_cpex <- residuals(model_cpex,"resp")
+binnedplot(x=fitted(model_cpex),y=rawresid_cpex,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_cpex <- confusionMatrix(as.factor(ifelse(fitted(model_cpex) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_cpex
+
+mean(cleveland$num_num)
+```
+
+```{r, echo=F}
+model_1 <- glm(num ~ cp + age, data = cleveland, family = 'binomial');summary(model_1)
+anova(model_cp, model_1) #Deviance -9.62
+rawresid_1 <- residuals(model_1,"resp")
+confmat_1 <- confusionMatrix(as.factor(ifelse(fitted(model_1) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_1
+
+model_2 <- glm(num ~ cp + sex, data = cleveland, family = 'binomial');summary(model_2)
+anova(model_cp, model_2) #Deviance -22.44
+rawresid_2 <- residuals(model_2,"resp")
+confmat_2 <- confusionMatrix(as.factor(ifelse(fitted(model_2) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_2
+
+model_3 <- glm(num ~ cp + trestbps, data = cleveland, family = 'binomial');summary(model_3)
+anova(model_cp, model_3) #Deviance -6.99
+rawresid_3 <- residuals(model_3,"resp")
+confmat_3 <- confusionMatrix(as.factor(ifelse(fitted(model_3) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_3
+
+model_4 <- glm(num ~ relevel(cp,ref = 'asymptomatic') * chol, data = cleveland, family = 'binomial');summary(model_4)
+anova(model_cp, model_4) #Deviance -0.98
+rawresid_4 <- residuals(model_4,"resp")
+confmat_4 <- confusionMatrix(as.factor(ifelse(fitted(model_4) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_4
+
+model_5 <- glm(num ~ cp + fbs, data = cleveland, family = 'binomial');summary(model_5)
+anova(model_cp, model_5) #Deviance -0.773
+rawresid_5 <- residuals(model_5,"resp")
+confmat_5 <- confusionMatrix(as.factor(ifelse(fitted(model_5) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_5
+
+model_6 <- glm(num ~ cp + restecg, data = cleveland, family = 'binomial');summary(model_6)
+anova(model_cp, model_6) #Deviance -4.66
+rawresid_6 <- residuals(model_6,"resp")
+confmat_6 <- confusionMatrix(as.factor(ifelse(fitted(model_6) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_6
+
+model_7 <- glm(num ~ relevel(cp,ref='asymptomatic') + thalach, data = cleveland, family = 'binomial');summary(model_7)
+anova(model_cp, model_7) #Deviance -25.038
+binnedplot(x=fitted(model_7),y=rawresid_cp,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+rawresid_7 <- residuals(model_7,"resp")
+confmat_7 <- confusionMatrix(as.factor(ifelse(fitted(model_7) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_7
+
+model_8 <- glm(num ~ relevel(cp,ref='asymptomatic') * oldpeak, data = cleveland, family = 'binomial');summary(model_8)
+anova(model_cp, model_8) #Deviance -37.60
+rawresid_8 <- residuals(model_8,"resp")
+confmat_8 <- confusionMatrix(as.factor(ifelse(fitted(model_8) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_8
+
+model_9 <- glm(num ~ cp + slope, data = cleveland, family = 'binomial');summary(model_9)
+anova(model_cp, model_9) #Deviance -27.65
+rawresid_9 <- residuals(model_1,"resp")
+confmat_9 <- confusionMatrix(as.factor(ifelse(fitted(model_9) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_9
+
+model_10 <- glm(num ~ relevel(cp,ref='asymptomatic') + relevel(ca,ref='3'), data = cleveland, family = 'binomial');summary(model_10)
+anova(model_cp, model_10) #Deviance -47.33
+rawresid_10 <- residuals(model_10,"resp")
+confmat_10 <- confusionMatrix(as.factor(ifelse(fitted(model_10) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_10
+
+model_11 <- glm(num ~ relevel(cp,ref='asymptomatic') + thal, data = cleveland, family = 'binomial');summary(model_11)
+anova(model_cp, model_11) #Deviance -52.90
+rawresid_11 <- residuals(model_11,"resp")
+confmat_11 <- confusionMatrix(as.factor(ifelse(fitted(model_11) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_11
+```
+thal (model_11) (130/97)
+ca (model_10) (114/111)
+oldpeak (model_8) (118/110) 
+slope (model_9) (121/103)
+thalach (model_7) (125/105)
+sex (model_2) (121/103)
+
+age (model_1) (121/103)
+trestbps (model_3) (121/103)
+restecg (model_6) (121/103)
+
+chol (model_4) (121/103)
+fbs (model_5) (121/103)
+
+
+```{r, echo=F}
+model_thalach <- glm(num ~ thalach, data = cleveland, family = 'binomial');summary(model_thalach)
+anova(model_thalach, model_7) #Deviance -25.038
+rawresid_thalach <- residuals(model_thalach,"resp")
+confmat_thalach <- confusionMatrix(as.factor(ifelse(fitted(model_thalach) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis"); confmat_thalach
+```
+```{r, echo=F}
+model_cp_sex <- glm(num ~ relevel(cp,ref='asymptomatic')*relevel(sex,ref='male'), data = cleveland, family = 'binomial');summary(model_cp_sex)
+rawresid_cp_sex <- residuals(model_cp_sex,"resp")
+binnedplot(x=fitted(model_cp_sex),y=rawresid_cp_sex,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_cp_sex <- confusionMatrix(as.factor(ifelse(fitted(model_cp_sex) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_cp_sex
+
+```
+
+```{r, echo=F}
+model_cp_sex <- glm(num ~ relevel(cp,ref='asymptomatic')*relevel(sex,ref='male') + thalach + thalach:relevel(sex,ref='male'), data = cleveland, family = 'binomial');summary(model_cp_sex)
+rawresid_cp_sex <- residuals(model_cp_sex,"resp")
+binnedplot(x=fitted(model_cp_sex),y=rawresid_cp_sex,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_cp_sex <- confusionMatrix(as.factor(ifelse(fitted(model_cp_sex) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_cp_sex
+```
+
+```{r, echo=F}
+model_cp_sex <- glm(num ~ relevel(cp,ref='asymptomatic')*relevel(sex,ref='male') + trestbps + trestbps:relevel(sex,ref='male'), data = cleveland, family = 'binomial');summary(model_cp_sex)
+rawresid_cp_sex <- residuals(model_cp_sex,"resp")
+binnedplot(x=fitted(model_cp_sex),y=rawresid_cp_sex,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_cp_sex <- confusionMatrix(as.factor(ifelse(fitted(model_cp_sex) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_cp_sex
+
+```
+
+```{r, echo=F}
+
+```
+
+```{r, echo=F}
+
+```
+
+```{r, echo=F}
+### Full model
+
+model_full = glm(num ~ cp*exang + 
+                   cp:sex +
+                   cp:thal +
+                   chol:cp +
+                   oldpeak + 
+                   oldpeak:cp + 
+                   trestbps + 
+                   trestbps:sex + 
+                   sex +
+                   thalach +
+                   chol +
+                   thal +
+                   thal:age +
+                   age,
+                 data = cleveland, family = binomial)
+
+model_full_2 = glm(num ~ cp + 
+                   cp:sex +
+                   cp:thal +
+                   oldpeak + 
+                   oldpeak:cp + 
+                   sex +
+                   thalach +
+                   thal +
+                   thal:age +
+                   slope +
+                   age,
+                 data = cleveland, family = binomial)
+anova(model_full, model_full_2)
+
+summary(model_full)
+
+rawresid_full <- residuals(model_full_2,"resp")
+binnedplot(x=fitted(model_full_2),y=rawresid_full,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_full <- confusionMatrix(as.factor(ifelse(fitted(model_full_2) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_full
+```
+
+```{r, echo=F}
+n <- nrow(cleveland)
+step_model <- step(model_cp,scope=formula(model_full),direction="forward",
+     trace=0,k = log(n))
+summary(step_model)
+
+rawresid_step <- residuals(step_model,"resp")
+binnedplot(x=fitted(step_model),y=rawresid_step,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_step <- confusionMatrix(as.factor(ifelse(fitted(step_model) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_step
+```
+
+```{r, echo=F}
+n <- nrow(cleveland)
+step_model <- step(model_exang,scope=formula(model_full),direction="forward",
+     trace=0,k = log(n))
+summary(step_model)
+
+rawresid_step <- residuals(step_model,"resp")
+binnedplot(x=fitted(step_model),y=rawresid_step,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_step <- confusionMatrix(as.factor(ifelse(fitted(step_model) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_step
+```
+```{r, echo=F}
+
+```
+
+```{r, echo=F}
+n <- nrow(cleveland)
+step_model <- step(model_cpex,scope=formula(model_full),direction="forward",
+     trace=0,k = log(n))
+summary(step_model)
+
+rawresid_step <- residuals(step_model,"resp")
+binnedplot(x=fitted(step_model),y=rawresid_step,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_step <- confusionMatrix(as.factor(ifelse(fitted(step_model) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_step
+```
+
+```{r, echo=F}
+model_cpsex <- glm(num ~ exang*sex, data = cleveland, family = 'binomial')
+summary(model_cpsex)
+rawresid_cpsex <- residuals(model_cpsex,"resp")
+binnedplot(x=fitted(model_cpsex),y=rawresid_cpsex,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
+confmat_cpsex <- confusionMatrix(as.factor(ifelse(fitted(model_cpsex) >= 0.5, "Diagnosis","NoDiagnosis")),
+                                as.factor(cleveland$num), positive = "Diagnosis")
+confmat_cpsex
+
+```
