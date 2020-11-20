@@ -23,7 +23,7 @@ library(pROC)
 There do appear to be some missing values (4 in 'ca', and 2 in 'thal')
 Dropping all rows with na values drops 6 rows (303 -> 297)
 ```{r cars}
-cleveland <- read.csv('cleaned_cleveland.csv',header = TRUE)
+cleveland <- read.csv('Data/cleaned_cleveland.csv',header = TRUE)
 cleveland$sex <- factor(cleveland$sex, 
                        levels = c(0,1), 
                        labels = c('female','male')
@@ -360,7 +360,7 @@ When looking at chest pain alone, does
 model_bare <- glm(num ~ 1, data = cleveland, family = binomial)
 summary(model_bare)
 rawresid_bare <- residuals(model_bare,"resp")
-binnedplot(x=fitted(model_bare),y=rawresid1,xlab="Pred. probabilities",
+binnedplot(x=fitted(model_bare),y=rawresid_bare,xlab="Pred. probabilities",
            col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
 confmat_bare <- confusionMatrix(as.factor(ifelse(fitted(model_bare) >= 0.5, "Diagnosis","NoDiagnosis")),
                                 as.factor(cleveland$num), positive = "Diagnosis")
@@ -437,21 +437,23 @@ confmat_6 <- confusionMatrix(as.factor(ifelse(fitted(model_6) >= 0.5, "Diagnosis
 
 model_7 <- glm(num ~ relevel(cp,ref='asymptomatic') + thalach, data = cleveland, family = 'binomial');summary(model_7)
 anova(model_cp, model_7) #Deviance -25.038
-binnedplot(x=fitted(model_7),y=rawresid_cp,xlab="Pred. probabilities",
-           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
 rawresid_7 <- residuals(model_7,"resp")
+binnedplot(x=fitted(model_7),y=rawresid_7,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
 confmat_7 <- confusionMatrix(as.factor(ifelse(fitted(model_7) >= 0.5, "Diagnosis","NoDiagnosis")),
                                 as.factor(cleveland$num), positive = "Diagnosis"); confmat_7
 
 model_8 <- glm(num ~ relevel(cp,ref='asymptomatic') * oldpeak, data = cleveland, family = 'binomial');summary(model_8)
 anova(model_cp, model_8) #Deviance -37.60
 rawresid_8 <- residuals(model_8,"resp")
+binnedplot(x=fitted(model_7),y=rawresid_8,xlab="Pred. probabilities",
+           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
 confmat_8 <- confusionMatrix(as.factor(ifelse(fitted(model_8) >= 0.5, "Diagnosis","NoDiagnosis")),
                                 as.factor(cleveland$num), positive = "Diagnosis"); confmat_8
 
 model_9 <- glm(num ~ cp + slope, data = cleveland, family = 'binomial');summary(model_9)
 anova(model_cp, model_9) #Deviance -27.65
-rawresid_9 <- residuals(model_1,"resp")
+rawresid_9 <- residuals(model_9,"resp")
 confmat_9 <- confusionMatrix(as.factor(ifelse(fitted(model_9) >= 0.5, "Diagnosis","NoDiagnosis")),
                                 as.factor(cleveland$num), positive = "Diagnosis"); confmat_9
 
@@ -490,7 +492,7 @@ confmat_thalach <- confusionMatrix(as.factor(ifelse(fitted(model_thalach) >= 0.5
                                 as.factor(cleveland$num), positive = "Diagnosis"); confmat_thalach
 ```
 ```{r, echo=F}
-model_cp_sex <- glm(num ~ relevel(cp,ref='asymptomatic')*relevel(sex,ref='male'), data = cleveland, family = 'binomial');summary(model_cp_sex)
+model_cp_sex <- glm(num ~ relevel(cp,ref='asymptomatic')*relevel(sex,ref='male'), data = cleveland, family = 'binomial');pander(summary(model_cp_sex))
 rawresid_cp_sex <- residuals(model_cp_sex,"resp")
 binnedplot(x=fitted(model_cp_sex),y=rawresid_cp_sex,xlab="Pred. probabilities",
            col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
@@ -501,7 +503,7 @@ confmat_cp_sex
 ```
 
 ```{r, echo=F}
-model_cp_sex <- glm(num ~ relevel(cp,ref='asymptomatic')*relevel(sex,ref='male') + thalach + thalach:relevel(sex,ref='male'), data = cleveland, family = 'binomial');summary(model_cp_sex)
+model_cp_sex <- glm(num ~ relevel(cp,ref='asymptomatic')*relevel(sex,ref='male') + thalach + thalach:relevel(sex,ref='male'), data = cleveland, family = 'binomial');pander(summary(model_cp_sex))
 rawresid_cp_sex <- residuals(model_cp_sex,"resp")
 binnedplot(x=fitted(model_cp_sex),y=rawresid_cp_sex,xlab="Pred. probabilities",
            col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
@@ -529,102 +531,3 @@ confmat_cp_sex
 
 ```
 
-```{r, echo=F}
-### Full model
-
-model_full = glm(num ~ cp*exang + 
-                   cp:sex +
-                   cp:thal +
-                   chol:cp +
-                   oldpeak + 
-                   oldpeak:cp + 
-                   trestbps + 
-                   trestbps:sex + 
-                   sex +
-                   thalach +
-                   chol +
-                   thal +
-                   thal:age +
-                   age,
-                 data = cleveland, family = binomial)
-
-model_full_2 = glm(num ~ cp + 
-                   cp:sex +
-                   cp:thal +
-                   oldpeak + 
-                   oldpeak:cp + 
-                   sex +
-                   thalach +
-                   thal +
-                   thal:age +
-                   slope +
-                   age,
-                 data = cleveland, family = binomial)
-anova(model_full, model_full_2)
-
-summary(model_full)
-
-rawresid_full <- residuals(model_full_2,"resp")
-binnedplot(x=fitted(model_full_2),y=rawresid_full,xlab="Pred. probabilities",
-           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
-confmat_full <- confusionMatrix(as.factor(ifelse(fitted(model_full_2) >= 0.5, "Diagnosis","NoDiagnosis")),
-                                as.factor(cleveland$num), positive = "Diagnosis")
-confmat_full
-```
-
-```{r, echo=F}
-n <- nrow(cleveland)
-step_model <- step(model_cp,scope=formula(model_full),direction="forward",
-     trace=0,k = log(n))
-summary(step_model)
-
-rawresid_step <- residuals(step_model,"resp")
-binnedplot(x=fitted(step_model),y=rawresid_step,xlab="Pred. probabilities",
-           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
-confmat_step <- confusionMatrix(as.factor(ifelse(fitted(step_model) >= 0.5, "Diagnosis","NoDiagnosis")),
-                                as.factor(cleveland$num), positive = "Diagnosis")
-confmat_step
-```
-
-```{r, echo=F}
-n <- nrow(cleveland)
-step_model <- step(model_exang,scope=formula(model_full),direction="forward",
-     trace=0,k = log(n))
-summary(step_model)
-
-rawresid_step <- residuals(step_model,"resp")
-binnedplot(x=fitted(step_model),y=rawresid_step,xlab="Pred. probabilities",
-           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
-confmat_step <- confusionMatrix(as.factor(ifelse(fitted(step_model) >= 0.5, "Diagnosis","NoDiagnosis")),
-                                as.factor(cleveland$num), positive = "Diagnosis")
-confmat_step
-```
-```{r, echo=F}
-
-```
-
-```{r, echo=F}
-n <- nrow(cleveland)
-step_model <- step(model_cpex,scope=formula(model_full),direction="forward",
-     trace=0,k = log(n))
-summary(step_model)
-
-rawresid_step <- residuals(step_model,"resp")
-binnedplot(x=fitted(step_model),y=rawresid_step,xlab="Pred. probabilities",
-           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
-confmat_step <- confusionMatrix(as.factor(ifelse(fitted(step_model) >= 0.5, "Diagnosis","NoDiagnosis")),
-                                as.factor(cleveland$num), positive = "Diagnosis")
-confmat_step
-```
-
-```{r, echo=F}
-model_cpsex <- glm(num ~ exang*sex, data = cleveland, family = 'binomial')
-summary(model_cpsex)
-rawresid_cpsex <- residuals(model_cpsex,"resp")
-binnedplot(x=fitted(model_cpsex),y=rawresid_cpsex,xlab="Pred. probabilities",
-           col.int="red4",ylab="Avg. residuals",main="Binned residual plot",col.pts="navy")
-confmat_cpsex <- confusionMatrix(as.factor(ifelse(fitted(model_cpsex) >= 0.5, "Diagnosis","NoDiagnosis")),
-                                as.factor(cleveland$num), positive = "Diagnosis")
-confmat_cpsex
-
-```
